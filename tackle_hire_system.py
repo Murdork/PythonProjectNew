@@ -6,8 +6,7 @@
 # tip?
 # Example-check valid?
 
-# ER report skewered
-# ask if want to add another hire?
+# ER erport skewqered
 
 # COM4018 – Introduction to Programming
 # Task 3B + prerequisites (Tasks 1–3 integrated)
