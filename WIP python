@@ -6,8 +6,10 @@
 # tip?
 # Example-check valid?
 
-# ER report skewered
-# ask if want to add another hire?
+# ER report skewqered
+# trailing spaces before 2nd line
+# REFER TO BRIEF to check ER output
+
 
 # COM4018 – Introduction to Programming
 # Task 3B + prerequisites (Tasks 1–3 integrated)
@@ -315,7 +317,6 @@ def run_hire_flow():
 
 # -----------------------------
 # Task 3B — Earnings report
-# -----------------------------
 def run_earnings_report():
     """
     Produce an earnings report similar to Figure 4:
@@ -326,20 +327,35 @@ def run_earnings_report():
         print("\nNo hires recorded yet.")
         return
 
-    print("\nEarnings Report")
-    print("ID   CUSTOMER NAME                 EQUIPMENT (name – qty, …)")
-    print("NIGHTS  TOTAL COST   ON-TIME  EXTRA FOR DELAYED RETURN")
-    print("----  --------------------------  -----------------------------------------------")
+    print("\n" + "-"*120)
+    print("Earnings Report")
+    print("-" * 120)
+    # Print header
+    header = (
+        f"{'ID':<4} | {'Customer Name':<20} | {'Equipment (Name – Qty)':<45} | "
+        f"{'Nights':>6} | {'On-Time':>7} | {'Late Fee':>10} | {'Total Cost':>12}"
+    )
+    print(header)
+    print("-" * 120)
+
     grand_total = 0
     for r in HIRE_RECORDS:
         items_summary = ", ".join([f"{ln['name']} – {ln['qty']}" for ln in r["lines"]])
-        print(f"{r['customer_id']:>3}  {r['customer_name'][:26]:<26}  {items_summary}")
-        print(f"  {r['nights']:>3}   {money(r['total_p']):>11}     {r['returned_on_time']:^7}  {money(r['extra_delay_p'])}")
-        print("-" * 86)
+        # Truncate long summaries to fit the column
+        if len(items_summary) > 42:
+            items_summary = items_summary[:39] + "..."
+        
+        # Print a single row for the record
+        row = (
+            f"{r['customer_id']:<4} | {r['customer_name']:<20} | {items_summary:<45} | "
+            f"{r['nights']:>6} | {r['returned_on_time']:>7} | {money(r['extra_delay_p']):>10} | {money(r['total_p']):>12}"
+        )
+        print(row)
         grand_total += r["total_p"]
 
-    print(f"TOTAL EARNINGS: {money(grand_total)}")
-
+    print("-" * 120)
+    print(f"TOTAL EARNINGS: {money(grand_total):>107}")
+    print("-" * 120)
     
 # -----------------------------
 # Main loop (Task 1 driver)
