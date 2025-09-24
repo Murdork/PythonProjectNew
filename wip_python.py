@@ -1,6 +1,6 @@
 # ==========================================
 # Aim to simplify and reduce complexity
-#
+# AUDIENCE - shop staff
 # ER
 # Availalable eq list>? 
 # tip?
@@ -9,7 +9,7 @@
 # ER report skewqered
 # trailing spaces before 2nd line
 # REFER TO BRIEF to check ER output
-
+# give table fixed width? Take left (width)
 
 # COM4018 – Introduction to Programming
 # Task 3B + prerequisites (Tasks 1–3 integrated)
