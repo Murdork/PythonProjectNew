@@ -12,6 +12,22 @@ Key rules:
 - Money is handled as integer pence to avoid floating-point error.
 """
 
+# ==========================================
+# Aim to simplify and reduce complexity
+# AUDIENCE - shop staff
+# ER
+# Availalable eq list>? 
+# tip?
+# Example-check valid?
+
+# ER report skewqered
+# trailing spaces before 2nd line
+# REFER TO BRIEF to check ER output
+# give table fixed width? Take left (width)
+
+
+
+
 # -----------------------------
 # Read-only equipment catalogue (Figure 2)
 # -----------------------------
