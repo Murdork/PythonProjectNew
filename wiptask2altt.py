@@ -1,47 +1,34 @@
-"""COM4018 – Equipment Hire Console App (Tasks 1 & 2)
+"""COM4018 – Introduction to Programming (Task 2B)
 
-A simple, menu-driven console program for a small shop that hires fishing/camping
-
-This file contains the implementation for Task 1 (Main Menu) and Task 2 (Hiring Flow).
+Menu + Customer/Item entry with validation (Option 1 implemented).
+Option 2 is a placeholder for the Earnings Report (to be completed in Task 3).
+No external modules are imported per brief requirements.
 """
 
 # -----------------------------
 # Read-only equipment catalogue (Figure 2)
 # -----------------------------
-
-# -----------------------------
-# Equipment catalogue (read-only): prices stored in integer pence
-# to avoid floating-point rounding issues during calculations.
-# -----------------------------
 CATALOG = (
-    {"code": "DCH", "name": "Day chairs", "daily_p": 1500},
-    {"code": "BCH", "name": "Bed chairs", "daily_p": 2500},
-    {"code": "BAS", "name": "Bite Alarm (set of 3)", "daily_p": 2000},
-    {"code": "BA1", "name": "Bite Alarm (single)", "daily_p": 500},
-    {"code": "BBT", "name": "Bait Boat", "daily_p": 6000},
-    {"code": "TNT", "name": "Camping tent", "daily_p": 2000},
-    {"code": "SLP", "name": "Sleeping bag", "daily_p": 2000},
-    {"code": "R3T", "name": "Rods (3lb TC)", "daily_p": 1000},
-    {"code": "RBR", "name": "Rods (Bait runners)", "daily_p": 500},
-    {"code": "REB", "name": "Reels (Bait runners)", "daily_p": 1000},
-    {"code": "STV", "name": "Camping Gas stove (Double burner)", "daily_p": 1000},
+    {"code": "DCH", "name": "Day chairs", "daily_p": 1500},   # £15.00
+    {"code": "BCH", "name": "Bed chairs", "daily_p": 2500},   # £25.00
+    {"code": "BAS", "name": "Bite Alarm (set of 3)", "daily_p": 2000},  # £20.00
+    {"code": "BA1", "name": "Bite Alarm (single)", "daily_p": 500},     # £5.00
+    {"code": "BBT", "name": "Bait Boat", "daily_p": 6000},    # £60.00
+    {"code": "TNT", "name": "Camping tent", "daily_p": 2000}, # £20.00
+    {"code": "SLP", "name": "Sleeping bag", "daily_p": 2000}, # £20.00
+    {"code": "R3T", "name": "Rods (3lb TC)", "daily_p": 1000},          # £10.00
+    {"code": "RBR", "name": "Rods (Bait runners)", "daily_p": 500},     # £5.00
+    {"code": "REB", "name": "Reels (Bait runners)", "daily_p": 1000},   # £10.00
+    {"code": "STV", "name": "Camping Gas stove (Double burner)", "daily_p": 1000},  # £10.00
 )
 
-# -----------------------------
-# Pricing rules (per brief):
-#  • First night charged at 100% of daily rate.
-#  • Each additional night charged at 50% of daily rate.
-#  • If returned after 2pm, add one extra 50% night.
-# Using a rational (num/den) keeps the 1/2 factor explicit.
-# -----------------------------
+# 50% of daily rate for each additional night
 ADDITIONAL_NIGHT_MULTIPLIER_NUM = 1
 ADDITIONAL_NIGHT_MULTIPLIER_DEN = 2
 
 
 # -----------------------------
-# Application state container:
-#  • hire_records: list of persisted hire dicts used for the report
-#  • next_customer_id: running ID to match sample outputs
+# App state (shared across options)
 # -----------------------------
 class AppState:
     """Holds mutable program state for the current run."""
@@ -54,46 +41,84 @@ class AppState:
 # Utilities
 # -----------------------------
 
-# Utility: format integer pence as a Sterling string '£x.xx'.
 def money(pence: int) -> str:
+    """Format integer pence as '£x,xxx.xx'."""
     pounds = pence // 100
     pennies = pence % 100
-    return f"£{pounds}.{pennies:02d}"
+    return f"£{pounds:,}.{pennies:02d}"
 
-# Utility: case-insensitive lookup of a catalogue item by code.
+
 def find_item(code: str) -> dict | None:
+    """Return catalog item dict by item code (case-insensitive), else None."""
     code = code.upper()
     return next((it for it in CATALOG if it["code"] == code), None)
 
-# Utility: comma-separated list of valid item codes for prompts.
+
 def catalog_codes() -> str:
+    """Return a compact string of known codes for prompts."""
     return ", ".join(it["code"] for it in CATALOG)
 
-# UI: Task 1 menu printed exactly as specified in the brief.
+
 def print_main_menu() -> None:
+    """Print the main menu."""
     print("\n=== Main Menu ===")
     print("1) Customer & hire details")
-    print("2) Earnings report")  # placeholder in Task 2 variant
+    print("2) Earnings report")  # placeholder in Task 2B
     print("3) Exit")
 
-# Input: read and validate a menu choice in the range 1–3.
+
 def read_choice() -> int | None:
+    """Read a menu choice (1–3). Return int or None if invalid."""
     s = input("Select an option (1-3): ").strip()
     if not s.isdigit():
         return None
     n = int(s)
     return n if n in (1, 2, 3) else None
 
-# Input: normalise 'yes'/'no' answers to canonical 'y' or 'n'.
+
 def read_yes_no(prompt: str = "(y/n): ") -> str:
+    """Read 'y' or 'n' (accepts 'yes'/'no'). Returns 'y' or 'n'."""
     while True:
         s = input(prompt).strip().lower()
         if s in ("y", "n", "yes", "no"):
             return "y" if s.startswith("y") else "n"
         print("Please enter 'y' or 'n'.")
 
-# Input: read a positive integer (re-prompts until valid).
+
+def parse_csv_2_fields(line: str) -> tuple[str, str] | None:
+    """Parse 'A, B' into two trimmed fields. Supports simple quotes around A or B."""
+    line = line.strip()
+    if not line:
+        return None
+    # Simple hand-rolled parser for two fields with optional quotes
+    in_quotes = False
+    buf = []
+    fields: list[str] = []
+    i = 0
+    while i < len(line):
+        ch = line[i]
+        if ch == '"':
+            # toggle quotes or treat doubled "" as literal quote
+            if in_quotes and i + 1 < len(line) and line[i + 1] == '"':
+                buf.append('"')
+                i += 1
+            else:
+                in_quotes = not in_quotes
+        elif ch == ',' and not in_quotes:
+            fields.append("".join(buf).strip())
+            buf.clear()
+        else:
+            buf.append(ch)
+        i += 1
+    fields.append("".join(buf).strip())
+
+    if len(fields) != 2:
+        return None
+    return fields[0], fields[1]
+
+
 def read_positive_int(prompt: str, min_value: int = 1) -> int:
+    """Read a positive integer ≥ min_value."""
     while True:
         s = input(prompt).strip()
         if not s.isdigit():
@@ -107,12 +132,11 @@ def read_positive_int(prompt: str, min_value: int = 1) -> int:
 
 
 # -----------------------------
-# Task 2 – Customer header + items
+# Input: Customer + Hire header (Task 2)
 # -----------------------------
 
-# Task 2: prompt for name, phone, house_no, postcode, card_last4.
-# Minimal validation applied; values are normalised for storage.
 def read_customer_header() -> dict | None:
+    """Prompt for customer header: name, phone, house_no, postcode, card_last4."""
     print("\nEnter customer (comma separated):")
     print("  name, phone, house_no, postcode, card_last4")
     print("  Example:  Jane Smith, 07900111222, 12, LE1 2AB, 1234")
@@ -121,6 +145,7 @@ def read_customer_header() -> dict | None:
         print("Cancelled.")
         return None
 
+    # Split into 5 parts – allow commas in name via simple split fallback
     parts = [p.strip() for p in s.split(",")]
     if len(parts) != 5:
         print("Expected 5 fields separated by commas.")
@@ -149,10 +174,10 @@ def read_customer_header() -> dict | None:
         "card_last4": card_digits,
     }
 
-# Pricing: compute first night, additional nights (50%), and any late
-# return charge (extra 50% night). Returns totals in pence.
+
 def calc_line_costs(daily_p: int, qty: int, nights: int,
                     returned_on_time: bool) -> tuple[int, int, int]:
+    """Return (first_night_p, additional_p, extra_delay_p) for one line."""
     first_night_p = daily_p * qty
     add_per_night = (daily_p * qty * ADDITIONAL_NIGHT_MULTIPLIER_NUM) // \
                     ADDITIONAL_NIGHT_MULTIPLIER_DEN
@@ -160,9 +185,9 @@ def calc_line_costs(daily_p: int, qty: int, nights: int,
     extra_delay_p = 0 if returned_on_time else add_per_night
     return first_night_p, additional_p, extra_delay_p
 
-# Task 2: collect item lines 'CODE, quantity'; validate and compute
-# per-line totals eagerly so later reporting is a simple sum.
+
 def read_item_lines(nights: int, returned_on_time: bool) -> list[dict]:
+    """Read item lines: 'CODE, quantity' (one per line). Returns computed line dicts."""
     print("\nEnter item lines (one per line), then press ENTER on a blank line to finish.")
     print("Format: CODE, quantity   e.g.,  DCH, 2")
     print(f"Nights for this hire: {nights}  | Returned on time: {returned_on_time}")
@@ -177,12 +202,12 @@ def read_item_lines(nights: int, returned_on_time: bool) -> list[dict]:
                 continue
             return lines
 
-        parts = [p.strip() for p in raw.split(',')]
-        if len(parts) != 2:
+        parsed = parse_csv_2_fields(raw)
+        if parsed is None:
             print("Expected 2 fields: CODE, quantity")
             continue
 
-        code_s, qty_s = parts
+        code_s, qty_s = parsed
         code = code_s.upper()
         item = find_item(code)
         if not item:
@@ -211,8 +236,12 @@ def read_item_lines(nights: int, returned_on_time: bool) -> list[dict]:
         })
 
 
-# Task 2: interactive hire entry loop; persists a summary record to state.
+# -----------------------------
+# Task 2 – Hire flow (with pricing rules)
+# -----------------------------
+
 def run_hire_flow(state: AppState) -> None:
+    """Run the equipment hire process (Task 2)."""
     while True:
         header = read_customer_header()
         if header is None:
@@ -223,6 +252,7 @@ def run_hire_flow(state: AppState) -> None:
         returned_on_time = (read_yes_no("Returned on time (y/n)? ") == "y")
         lines = read_item_lines(nights, returned_on_time)
 
+        # Summarise line totals
         items_summary = ", ".join(f"{ln['name']} – {ln['qty']}" for ln in lines)
         extra_delay_p = sum(ln["extra_delay_p"] for ln in lines)
         total_p = sum(ln["line_total_p"] for ln in lines)
@@ -255,11 +285,21 @@ def run_hire_flow(state: AppState) -> None:
 
 
 # -----------------------------
+# Task 2B – Earnings report placeholder
+# -----------------------------
+
+def run_earnings_report(state: AppState) -> None:
+    """Placeholder only – to be implemented in Task 3."""
+    print("\nEarnings report selected (placeholder – implement in Task 3).")
+    print(f"Hires recorded so far: {len(state.hire_records)}")
+
+
+# -----------------------------
 # Main loop
 # -----------------------------
 
-# Entry point: menu loop routes to hire flow, report, or exit.
 def main() -> None:
+    """Program entry point: menu loop."""
     state = AppState()
     while True:
         print_main_menu()
@@ -271,9 +311,7 @@ def main() -> None:
         if choice == 1:
             run_hire_flow(state)
         elif choice == 2:
-            # Placeholder for Task 2B
-            print("\nEarnings report selected (placeholder – implement in Task 3).")
-            print(f"Hires recorded so far: {len(state.hire_records)}")
+            run_earnings_report(state)  # placeholder in Task 2B
         elif choice == 3:
             print("Goodbye!")
             break
