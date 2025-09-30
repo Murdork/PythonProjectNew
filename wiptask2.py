@@ -1,18 +1,39 @@
-"""COM4018 – Equipment Hire Console App (Tasks 1 & 2)
+"""COM4018 – Introduction to Programming
+Task 2: Hiring equipment (Option 1 flow)
 
-A simple, menu-driven console program for a small shop that hires fishing/camping
+A menu-driven console programme for a small shop that hires fishing/camping equipment.
 
-This file contains the implementation for Task 1 (Main Menu) and Task 2 (Hiring Flow).
+Design notes:
+- Monetary values are stored as integer pence to avoid floating-point rounding issues.
+- Pricing rules: first night at 100%; each additional night at 50%; late returns incur one extra 50% night.
+- Parsing is split into pure functions (which raise ValueError) and interactive readers (which loop with messages).
+- No imports used.
 """
 
-# -----------------------------
-# Read-only equipment catalogue (Figure 2)
-# -----------------------------
+# ---------------- User-facing instructional text ----------------
 
-# -----------------------------
-# Equipment catalogue (read-only): prices stored in integer pence
-# to avoid floating-point rounding issues during calculations.
-# -----------------------------
+CUSTOMER_ENTRY_INSTRUCTIONS = (
+    "\nEnter customer (comma separated):\n"
+    "  name, phone, house_no, postcode, card_last4\n"
+    "  Example:  Jane Smith, 07900111222, 12, LE1 2AB, 1234"
+)
+
+ITEM_LINES_INSTRUCTIONS = (
+    "\nEnter item lines (one per line), then press ENTER on a blank line to finish.\n"
+    "Format: CODE, quantity   e.g.,  DCH, 2"
+)
+
+MAIN_MENU_LINES = (
+    "\n=== Main Menu (Task 2) ===",
+    "1) Enter details of customer and equipment hired",
+    "2) (Task 3) Create report  [not implemented in Task 2]",
+    "3) Exit",
+)
+
+PROMPT_SELECT_OPTION = "Select an option (1-3): "
+
+# ---------------- Catalogue & pricing ----------------
+
 CATALOG = (
     {"code": "DCH", "name": "Day chairs", "daily_p": 1500},
     {"code": "BCH", "name": "Bed chairs", "daily_p": 2500},
@@ -27,144 +48,168 @@ CATALOG = (
     {"code": "STV", "name": "Camping Gas stove (Double burner)", "daily_p": 1000},
 )
 
-# -----------------------------
-# Pricing rules (per brief):
-#  • First night charged at 100% of daily rate.
-#  • Each additional night charged at 50% of daily rate.
-#  • If returned after 2pm, add one extra 50% night.
-# Using a rational (num/den) keeps the 1/2 factor explicit.
-# -----------------------------
+# 50% multiplier encoded as a rational for clarity
 ADDITIONAL_NIGHT_MULTIPLIER_NUM = 1
 ADDITIONAL_NIGHT_MULTIPLIER_DEN = 2
 
 
-# -----------------------------
-# Application state container:
-#  • hire_records: list of persisted hire dicts used for the report
-#  • next_customer_id: running ID to match sample outputs
-# -----------------------------
 class AppState:
-    """Holds mutable program state for the current run."""
+    """Holds mutable programme state for the current run (Task 2 focuses on option 1)."""
     def __init__(self) -> None:
-        self.hire_records = []      # list[dict]
-        self.next_customer_id = 101 # simple running ID (matches brief samples)
+        self.hire_records: list[dict] = []
+        self.next_customer_id: int = 101
 
 
-# -----------------------------
-# Utilities
-# -----------------------------
+# ---------------- Utilities ----------------
 
-# Utility: format integer pence as a Sterling string '£x.xx'.
 def money(pence: int) -> str:
+    """Return integer pence as a sterling string '£x.xx'."""
     pounds = pence // 100
     pennies = pence % 100
     return f"£{pounds}.{pennies:02d}"
 
-# Utility: case-insensitive lookup of a catalogue item by code.
-def find_item(code: str) -> dict | None:
-    code = code.upper()
-    return next((it for it in CATALOG if it["code"] == code), None)
 
-# Utility: comma-separated list of valid item codes for prompts.
+def find_item(code: str) -> dict | None:
+    """Return the catalogue entry for code (case-insensitive) or None."""
+    code = str(code).upper()
+    for it in CATALOG:
+        if it["code"] == code:
+            return it
+    return None
+
+
 def catalog_codes() -> str:
+    """Return a comma-separated list of known item codes."""
     return ", ".join(it["code"] for it in CATALOG)
 
-# UI: Task 1 menu printed exactly as specified in the brief.
-def print_main_menu() -> None:
-    print("\n=== Main Menu ===")
-    print("1) Customer & hire details")
-    print("2) Earnings report")  # placeholder in Task 2 variant
-    print("3) Exit")
 
-# Input: read and validate a menu choice in the range 1–3.
+def print_main_menu() -> None:
+    """Display the main menu (Task 2 emphasises option 1)."""
+    for line in MAIN_MENU_LINES:
+        print(line)
+
+
 def read_choice() -> int | None:
-    s = input("Select an option (1-3): ").strip()
-    if not s.isdigit():
+    """Return a validated menu choice (1–3) or None when invalid."""
+    s = input(PROMPT_SELECT_OPTION).strip()
+    try:
+        n = int(s)
+    except ValueError:
         return None
-    n = int(s)
     return n if n in (1, 2, 3) else None
 
-# Input: normalise 'yes'/'no' answers to canonical 'y' or 'n'.
-def read_yes_no(prompt: str = "(y/n): ") -> str:
+
+def read_yes_no(prompt: str = "(y/n): ") -> bool:
+    """Prompt until the user enters yes/no; return True for yes, False for no."""
     while True:
         s = input(prompt).strip().lower()
-        if s in ("y", "n", "yes", "no"):
-            return "y" if s.startswith("y") else "n"
+        if s in ("y", "yes"):
+            return True
+        if s in ("n", "no"):
+            return False
         print("Please enter 'y' or 'n'.")
 
-# Input: read a positive integer (re-prompts until valid).
+
 def read_positive_int(prompt: str, min_value: int = 1) -> int:
+    """Return a positive integer ≥ min_value after repeated prompting."""
     while True:
         s = input(prompt).strip()
-        if not s.isdigit():
+        try:
+            n = int(s)
+        except ValueError:
             print("Please enter a whole number.")
             continue
-        n = int(s)
         if n < min_value:
             print(f"Please enter a number ≥ {min_value}.")
             continue
         return n
 
 
-# -----------------------------
-# Task 2 – Customer header + items
-# -----------------------------
+# ---------------- Pure parsers (raise on error) ----------------
 
-# Task 2: prompt for name, phone, house_no, postcode, card_last4.
-# Minimal validation applied; values are normalised for storage.
-def read_customer_header() -> dict | None:
-    print("\nEnter customer (comma separated):")
-    print("  name, phone, house_no, postcode, card_last4")
-    print("  Example:  Jane Smith, 07900111222, 12, LE1 2AB, 1234")
-    s = input("> ").strip()
-    if not s:
-        print("Cancelled.")
-        return None
+def _parse_customer_header(raw: str) -> dict:
+    """Parse and normalise the comma-separated customer header string.
 
-    parts = [p.strip() for p in s.split(",")]
+    Expected: name, phone, house_no, postcode, card_last4
+    Raises ValueError on invalid input.
+    """
+    parts = [p.strip() for p in raw.split(",")]
     if len(parts) != 5:
-        print("Expected 5 fields separated by commas.")
-        return None
+        raise ValueError("Expected 5 fields separated by commas.")
 
     name, phone, house_no, postcode, card_last4 = parts
-    name = name.strip()
-    phone_digits = "".join(ch for ch in phone if ch.isdigit())
-    card_digits = "".join(ch for ch in card_last4 if ch.isdigit())
-
     if not name:
-        print("Name cannot be empty.")
-        return None
+        raise ValueError("Name cannot be empty.")
+
+    phone_digits = "".join(ch for ch in phone if ch.isdigit())
     if len(phone_digits) < 7:
-        print("Phone should contain at least 7 digits.")
-        return None
+        raise ValueError("Phone should contain at least 7 digits.")
+
+    card_digits = "".join(ch for ch in card_last4 if ch.isdigit())
     if len(card_digits) != 4:
-        print("Card last 4 digits must be exactly 4 digits.")
-        return None
+        raise ValueError("Card last 4 digits must be exactly 4 digits.")
 
     return {
-        "customer_name": name,
+        "customer_name": name.strip(),
         "phone": phone_digits,
         "house_no": house_no.strip(),
         "postcode": postcode.strip().upper(),
         "card_last4": card_digits,
     }
 
-# Pricing: compute first night, additional nights (50%), and any late
-# return charge (extra 50% night). Returns totals in pence.
-def calc_line_costs(daily_p: int, qty: int, nights: int,
-                    returned_on_time: bool) -> tuple[int, int, int]:
+
+def _parse_item_line(raw: str) -> tuple[str, int]:
+    """Return (code, qty) parsed from raw, or raise ValueError."""
+    parts = [p.strip() for p in raw.split(",")]
+    if len(parts) != 2:
+        raise ValueError("Expected 2 fields: CODE, quantity")
+
+    code_s, qty_s = parts
+    code = code_s.upper()
+    item = find_item(code)
+    if not item:
+        raise ValueError(f"Unknown code '{code}'. Known: {catalog_codes()}")
+
+    try:
+        qty = int(qty_s)
+    except ValueError as exc:
+        raise ValueError("Quantity must be a whole number.") from exc
+
+    if qty < 1:
+        raise ValueError("Quantity must be ≥ 1.")
+
+    return code, qty
+
+
+# ---------------- Interactive readers (loop + messages) ----------------
+
+def read_customer_header() -> dict | None:
+    """Prompt repeatedly for customer fields or return None if cancelled."""
+    print(CUSTOMER_ENTRY_INSTRUCTIONS)
+    print("Type 'cancel' to return to the menu without saving.")
+    while True:
+        raw = input("> ").strip()
+        if raw.lower() in {"", "cancel"}:
+            print("Cancelled.")
+            return None
+        try:
+            return _parse_customer_header(raw)
+        except ValueError as err:
+            print(err)
+
+
+def calc_line_costs(daily_p: int, qty: int, nights: int, returned_on_time: bool) -> tuple[int, int, int]:
+    """Return (first_night, additional, delay) in pence."""
     first_night_p = daily_p * qty
-    add_per_night = (daily_p * qty * ADDITIONAL_NIGHT_MULTIPLIER_NUM) // \
-                    ADDITIONAL_NIGHT_MULTIPLIER_DEN
+    add_per_night = (daily_p * qty * ADDITIONAL_NIGHT_MULTIPLIER_NUM) // ADDITIONAL_NIGHT_MULTIPLIER_DEN
     additional_p = add_per_night * max(0, nights - 1)
     extra_delay_p = 0 if returned_on_time else add_per_night
     return first_night_p, additional_p, extra_delay_p
 
-# Task 2: collect item lines 'CODE, quantity'; validate and compute
-# per-line totals eagerly so later reporting is a simple sum.
+
 def read_item_lines(nights: int, returned_on_time: bool) -> list[dict]:
-    print("\nEnter item lines (one per line), then press ENTER on a blank line to finish.")
-    print("Format: CODE, quantity   e.g.,  DCH, 2")
+    """Collect item lines, computing totals eagerly for downstream reporting."""
+    print(ITEM_LINES_INSTRUCTIONS)
     print(f"Nights for this hire: {nights}  | Returned on time: {returned_on_time}")
     print(f"Known codes: {catalog_codes()}")
     lines: list[dict] = []
@@ -177,26 +222,13 @@ def read_item_lines(nights: int, returned_on_time: bool) -> list[dict]:
                 continue
             return lines
 
-        parts = [p.strip() for p in raw.split(',')]
-        if len(parts) != 2:
-            print("Expected 2 fields: CODE, quantity")
+        try:
+            code, qty = _parse_item_line(raw)
+        except ValueError as err:
+            print(err)
             continue
 
-        code_s, qty_s = parts
-        code = code_s.upper()
-        item = find_item(code)
-        if not item:
-            print(f"Unknown code '{code}'. Known: {catalog_codes()}")
-            continue
-        if not qty_s.isdigit():
-            print("Quantity must be a whole number.")
-            continue
-
-        qty = int(qty_s)
-        if qty < 1:
-            print("Quantity must be ≥ 1.")
-            continue
-
+        item = find_item(code)  # safe after _parse_item_line
         daily = item["daily_p"]
         first_p, add_p, delay_p = calc_line_costs(daily, qty, nights, returned_on_time)
         lines.append({
@@ -211,55 +243,50 @@ def read_item_lines(nights: int, returned_on_time: bool) -> list[dict]:
         })
 
 
-# Task 2: interactive hire entry loop; persists a summary record to state.
+# ---------------- Task 2 flow: option 1 only ----------------
+
 def run_hire_flow(state: AppState) -> None:
-    while True:
-        header = read_customer_header()
-        if header is None:
-            print("Returning to main menu.")
-            return
+    """Interactively capture hire data and persist it to state (Task 2)."""
+    header = read_customer_header()
+    if header is None:
+        print("Returning to main menu.")
+        return
 
-        nights = read_positive_int("Number of nights: ", min_value=1)
-        returned_on_time = (read_yes_no("Returned on time (y/n)? ") == "y")
-        lines = read_item_lines(nights, returned_on_time)
+    nights = read_positive_int("Number of nights: ", min_value=1)
+    returned_on_time = read_yes_no("Returned on time (y/n)? ")
+    lines = read_item_lines(nights, returned_on_time)
 
-        items_summary = ", ".join(f"{ln['name']} – {ln['qty']}" for ln in lines)
-        extra_delay_p = sum(ln["extra_delay_p"] for ln in lines)
-        total_p = sum(ln["line_total_p"] for ln in lines)
+    items_summary = ", ".join(f"{ln['name']} – {ln['qty']}" for ln in lines)
+    extra_delay_p = sum(ln["extra_delay_p"] for ln in lines)
+    total_p = sum(ln["line_total_p"] for ln in lines)
 
-        hire = {
-            "customer_id": state.next_customer_id,
-            "customer_name": header["customer_name"],
-            "nights": nights,
-            "returned_on_time": "y" if returned_on_time else "n",
-            "lines": lines,
-            "extra_delay_p": extra_delay_p,
-            "total_p": total_p,
-            "items_summary": items_summary,
-        }
-        state.hire_records.append(hire)
-        state.next_customer_id += 1
+    hire = {
+        "customer_id": state.next_customer_id,
+        "customer_name": header["customer_name"],
+        "nights": nights,
+        "returned_on_time": returned_on_time,  # bool internally
+        "lines": lines,
+        "extra_delay_p": extra_delay_p,
+        "total_p": total_p,
+        "items_summary": items_summary,
+    }
+    state.hire_records.append(hire)
+    state.next_customer_id += 1
 
-        print("\nSaved hire:")
-        print(f"  Customer ID: {hire['customer_id']}")
-        print(f"  Customer:    {hire['customer_name']}")
-        print(f"  Equipment:   {items_summary}")
-        print(f"  Nights:      {nights}")
-        print(f"  Returned on time: {hire['returned_on_time']}")
-        print(f"  Extra charge for delayed return: {money(extra_delay_p)}")
-        print(f"  Total cost:  {money(total_p)}\n")
-
-        if read_yes_no("Add another hire (y/n)? ") == "n":
-            print("Returning to main menu.")
-            return
+    print("\nSaved hire (Task 2):")
+    print(f"  Customer ID: {hire['customer_id']}")
+    print(f"  Customer:    {hire['customer_name']}")
+    print(f"  Equipment:   {items_summary}")
+    print(f"  Nights:      {nights}")
+    print(f"  Returned on time: {'y' if returned_on_time else 'n'}")
+    print(f"  Extra charge for delayed return: {money(extra_delay_p)}")
+    print(f"  Total cost:  {money(total_p)}\n")
 
 
-# -----------------------------
-# Main loop
-# -----------------------------
+# ---------------- Entry point (menu with Task 2 behaviour) ----------------
 
-# Entry point: menu loop routes to hire flow, report, or exit.
 def main() -> None:
+    """Run the main menu loop; Task 2 implements option 1 only."""
     state = AppState()
     while True:
         print_main_menu()
@@ -271,9 +298,7 @@ def main() -> None:
         if choice == 1:
             run_hire_flow(state)
         elif choice == 2:
-            # Placeholder for Task 2B
-            print("\nEarnings report selected (placeholder – implement in Task 3).")
-            print(f"Hires recorded so far: {len(state.hire_records)}")
+            print("(Task 3) Report is not implemented in Task 2.")
         elif choice == 3:
             print("Goodbye!")
             break
