@@ -52,15 +52,6 @@ CATALOG = {
 ADDITIONAL_NIGHT_MULTIPLIER_NUM = 1
 ADDITIONAL_NIGHT_MULTIPLIER_DEN = 2
 
-# ---------- Report column widths (module-level constants) ----------
-
-ID_WIDTH = 11
-EQUIPMENT_WIDTH = 65
-NIGHTS_WIDTH = 16
-TOTAL_WIDTH = 10
-ONTIME_WIDTH = 22
-EXTRA_WIDTH = 30
-
 # ---------- State ----------
 
 class AppState:
@@ -78,12 +69,6 @@ def money(pence: int) -> str:
 def catalog_codes() -> str:
     """Return a comma-separated catalogue code summary for prompts."""
     return ", ".join(CATALOG.keys())
-
-def print_catalog_price_list() -> None:
-    """Print available equipment and nightly prices (for Option 1 guidance)."""
-    print("\nAvailable equipment and nightly prices:")
-    for code, (name, daily_p) in CATALOG.items():
-        print(f"  {code}: {name} - {money(daily_p)} per night")
 
 def print_main_menu() -> None:
     """Display the main menu exactly as specified in the brief."""
@@ -103,10 +88,8 @@ def read_yes_no(prompt: str = "(y/n): ") -> bool:
     """Prompt until the user enters yes/no; return True for yes, False for no."""
     while True:
         s = input(prompt).strip().lower()
-        if s in ("y", "yes"):
-            return True
-        if s in ("n", "no"):
-            return False
+        if s in ("y", "yes"): return True
+        if s in ("n", "no"):  return False
         print("Please enter 'y' or 'n'.")
 
 def read_positive_int(prompt: str, min_value: int = 1) -> int:
@@ -274,8 +257,6 @@ def _wrap_equipment(text: str, width: int) -> list[str]:
 
 def run_hire_flow(state: AppState) -> None:
     """Interactively capture hire data and persist it to state."""
-    # Show current catalogue and prices for user reference
-    print_catalog_price_list()
     while True:
         header = read_customer_header()
         if header is None:
@@ -329,50 +310,37 @@ def run_earnings_report(state: AppState) -> None:
         print("\nNo hires recorded yet.")
         return
 
-    # Build headers from configured widths to guarantee alignment
-    header = (
-        f"{'Customer ID':<{ID_WIDTH}} | "
-        f"{'Equipment':<{EQUIPMENT_WIDTH}} | "
-        f"{'Number of nights':<{NIGHTS_WIDTH}} | "
-        f"{'Total Cost':<{TOTAL_WIDTH}} | "
-        f"{'Returned on time (y/n)':<{ONTIME_WIDTH}} | "
-        f"{'Extra charge for delayed return':<{EXTRA_WIDTH}}"
-    )
-    ruler = (
-        f"{'-'*ID_WIDTH} + "
-        f"{'-'*EQUIPMENT_WIDTH} + "
-        f"{'-'*NIGHTS_WIDTH} + "
-        f"{'-'*TOTAL_WIDTH} + "
-        f"{'-'*ONTIME_WIDTH} + "
-        f"{'-'*EXTRA_WIDTH}"
-    )
-    print(header)
-    print(ruler)
+    # Column widths (must match header ruler below)
+    ID_W, EQUIP_W, NIGHTS_W, TOTAL_W, ONTIME_W, EXTRA_W = 11, 65, 16, 10, 22, 30
+
+    # Headers (verbatim layout from brief)
+    print("Customer ID | Equipment                                                       | Number of nights | Total Cost | Returned on time (y/n) | Extra charge for delayed return")
+    print("------------+-----------------------------------------------------------------+------------------+------------+------------------------+--------------------------------")
 
     for h in state.hire_records:
         total_money = money(h["total_p"])
         extra_money = money(h["extra_delay_p"])
         on_time_char = "y" if h["returned_on_time"] else "n"
-        lines = _wrap_equipment(h["items_summary"], EQUIPMENT_WIDTH)
+        lines = _wrap_equipment(h["items_summary"], EQUIP_W)
 
         # First row carries all fields
         print(
-            f"{h['customer_id']:<{ID_WIDTH}} | "
+            f"{h['customer_id']:<{ID_W}} | "
             f"{lines[0]} | "
-            f"{h['nights']:<{NIGHTS_WIDTH}} | "
-            f"{total_money:<{TOTAL_WIDTH}} | "
-            f"{on_time_char:<{ONTIME_WIDTH}} | "
-            f"{extra_money:<{EXTRA_WIDTH}}"
+            f"{h['nights']:<{NIGHTS_W}} | "
+            f"{total_money:<{TOTAL_W}} | "
+            f"{on_time_char:<{ONTIME_W}} | "
+            f"{extra_money:<{EXTRA_W}}"
         )
         # Continuation rows: only Equipment is populated
         for cont in lines[1:]:
             print(
-                f"{'':<{ID_WIDTH}} | "
+                f"{'':<{ID_W}} | "
                 f"{cont} | "
-                f"{'':<{NIGHTS_WIDTH}} | "
-                f"{'':<{TOTAL_WIDTH}} | "
-                f"{'':<{ONTIME_WIDTH}} | "
-                f"{'':<{EXTRA_WIDTH}}"
+                f"{'':<{NIGHTS_W}} | "
+                f"{'':<{TOTAL_W}} | "
+                f"{'':<{ONTIME_W}} | "
+                f"{'':<{EXTRA_W}}"
             )
 
 # ---------- Entry point ----------

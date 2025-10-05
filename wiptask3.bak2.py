@@ -3,19 +3,19 @@
 A menu-driven console programme for a small shop that hires fishing and camping equipment.
 
 Design notes:
-- Money is stored as integer pence to avoid floating-point rounding issues.
-- Pricing rules: first night at 100%; each additional night at 50%; late returns incur one extra 50% night.
-- Reference data (catalogue) is read-only and separate from mutable state.
-- Input parsing is split into pure functions (raise on error) and interactive readers (loop with messages).
+- Monetary values are integer pence to avoid floating-point rounding issues.
+- CATALOG encodes the immutable price list; multipliers document pricing rules.
+- Pricing rules: first night at 100%; each additional night at 50%; late returns incur an extra 50% night.
+- Input helpers separate parsing (pure, raises) from prompting (loops with targeted messages) for testability.
 - Documentation follows PEP 257 docstrings. No imports are used.
 """
 
-# ---------- User-facing instructional text ----------
+# ---------- User-facing instructional text (kept separate for clarity/testability)
 
 CUSTOMER_ENTRY_INSTRUCTIONS = (
     "\nEnter customer (comma separated):\n"
-    "  customer_id, name, phone, house_no, postcode, card_last4\n"
-    "  Example:  101, Jane Smith, 07900111222, 12, LE1 2AB, 1234"
+    "  name, phone, house_no, postcode, card_last4\n"
+    "  Example:  Jane Smith, 07900111222, 12, LE1 2AB, 1234"
 )
 
 ITEM_LINES_INSTRUCTIONS = (
@@ -32,58 +32,55 @@ MAIN_MENU_LINES = (
 
 PROMPT_SELECT_OPTION = "Select an option (1-3): "
 
-# ---------- Catalogue (code → (name, daily_pence)) ----------
+# ---------- Read-only equipment catalogue (Figure 2)
 
-CATALOG = {
-    "DCH": ("Day chairs", 1500),
-    "BCH": ("Bed chairs", 2500),
-    "BAS": ("Bite Alarm (set of 3)", 2000),
-    "BA1": ("Bite Alarm (single)", 500),
-    "BBT": ("Bait Boat", 6000),
-    "TNT": ("Camping tent", 2000),
-    "SLP": ("Sleeping bag", 2000),
-    "R3T": ("Rods (3lb TC)", 1000),
-    "RBR": ("Rods (Bait runners)", 500),
-    "REB": ("Reels (Bait runners)", 1000),
-    "STV": ("Camping Gas stove (Double burner)", 1000),
-}
+CATALOG = (
+    {"code": "DCH", "name": "Day chairs", "daily_p": 1500},
+    {"code": "BCH", "name": "Bed chairs", "daily_p": 2500},
+    {"code": "BAS", "name": "Bite Alarm (set of 3)", "daily_p": 2000},
+    {"code": "BA1", "name": "Bite Alarm (single)", "daily_p": 500},
+    {"code": "BBT", "name": "Bait Boat", "daily_p": 6000},
+    {"code": "TNT", "name": "Camping tent", "daily_p": 2000},
+    {"code": "SLP", "name": "Sleeping bag", "daily_p": 2000},
+    {"code": "R3T", "name": "Rods (3lb TC)", "daily_p": 1000},
+    {"code": "RBR", "name": "Rods (Bait runners)", "daily_p": 500},
+    {"code": "REB", "name": "Reels (Bait runners)", "daily_p": 1000},
+    {"code": "STV", "name": "Camping Gas stove (Double burner)", "daily_p": 1000},
+)
 
-# Pricing multiplier for additional nights (50%)
-ADDITIONAL_NIGHT_MULTIPLIER_NUM = 1
+# ---------- Pricing rules (per brief) as rationals for clarity
+
+ADDITIONAL_NIGHT_MULTIPLIER_NUM = 1  # 50% per additional night
 ADDITIONAL_NIGHT_MULTIPLIER_DEN = 2
 
-# ---------- Report column widths (module-level constants) ----------
-
-ID_WIDTH = 11
-EQUIPMENT_WIDTH = 65
-NIGHTS_WIDTH = 16
-TOTAL_WIDTH = 10
-ONTIME_WIDTH = 22
-EXTRA_WIDTH = 30
-
-# ---------- State ----------
+# ---------- State
 
 class AppState:
     """Holds mutable programme state for the current run."""
     def __init__(self) -> None:
+        """Initialise the hire ledger and sequential customer IDs."""
         self.hire_records: list[dict] = []
+        self.next_customer_id: int = 101
 
-# ---------- Utilities ----------
+# ---------- Utilities
 
 def money(pence: int) -> str:
     """Return integer pence as a sterling string '£x.xx'."""
-    pounds, pennies = pence // 100, pence % 100
+    pounds = pence // 100
+    pennies = pence % 100
     return f"£{pounds}.{pennies:02d}"
+
+def find_item(code: str) -> dict | None:
+    """Return the catalogue entry for code (case-insensitive) or None."""
+    code = str(code).upper()
+    for it in CATALOG:
+        if it["code"] == code:
+            return it
+    return None
 
 def catalog_codes() -> str:
     """Return a comma-separated catalogue code summary for prompts."""
-    return ", ".join(CATALOG.keys())
-
-def print_catalog_price_list() -> None:
-    """Print available equipment and nightly prices (for Option 1 guidance)."""
-    print("\nAvailable equipment and nightly prices:")
-    for code, (name, daily_p) in CATALOG.items():
-        print(f"  {code}: {name} - {money(daily_p)} per night")
+    return ", ".join(it["code"] for it in CATALOG)
 
 def print_main_menu() -> None:
     """Display the main menu exactly as specified in the brief."""
@@ -123,25 +120,25 @@ def read_positive_int(prompt: str, min_value: int = 1) -> int:
             continue
         return n
 
-# ---------- Pure parsers ----------
+# ---------- Pure parsers (raise on error)
 
 def _parse_customer_header(raw: str) -> dict:
-    """Parse customer CSV: 'customer_id, name, phone, house_no, postcode, card_last4'.
+    """Parse and normalise the comma-separated customer header string.
+
+    Args:
+        raw: The raw comma-separated input from the user.
 
     Raises:
         ValueError: If the expected fields are missing or invalid.
+
+    Returns:
+        A dictionary containing the normalised customer details.
     """
     parts = [p.strip() for p in raw.split(",")]
-    if len(parts) != 6:
-        raise ValueError("Expected 6 fields separated by commas.")
-    id_s, name, phone, house_no, postcode, card_last4 = parts
+    if len(parts) != 5:
+        raise ValueError("Expected 5 fields separated by commas.")
 
-    try:
-        customer_id = int(id_s)
-    except ValueError as exc:
-        raise ValueError("Customer ID must be a whole number.") from exc
-    if customer_id <= 0:
-        raise ValueError("Customer ID must be ≥ 1.")
+    name, phone, house_no, postcode, card_last4 = parts
     if not name:
         raise ValueError("Name cannot be empty.")
 
@@ -154,11 +151,10 @@ def _parse_customer_header(raw: str) -> dict:
         raise ValueError("Card last 4 digits must be exactly 4 digits.")
 
     return {
-        "customer_id": customer_id,
         "customer_name": name,
         "phone": phone_digits,
-        "house_no": house_no,
-        "postcode": postcode.upper(),
+        "house_no": house_no.strip(),
+        "postcode": postcode.strip().upper(),
         "card_last4": card_digits,
     }
 
@@ -168,18 +164,23 @@ def _parse_item_line(raw: str) -> tuple[str, int]:
     if len(parts) != 2:
         raise ValueError("Expected 2 fields: CODE, quantity")
 
-    code, qty_s = parts[0].upper(), parts[1]
-    if code not in CATALOG:
+    code_s, qty_s = parts
+    code = code_s.upper()
+    item = find_item(code)
+    if not item:
         raise ValueError(f"Unknown code '{code}'. Known: {catalog_codes()}")
+
     try:
         qty = int(qty_s)
     except ValueError as exc:
         raise ValueError("Quantity must be a whole number.") from exc
+
     if qty < 1:
         raise ValueError("Quantity must be ≥ 1.")
+
     return code, qty
 
-# ---------- Interactive readers ----------
+# ---------- Interactive readers (loop + messages; use pure parsers)
 
 def read_customer_header() -> dict | None:
     """Prompt repeatedly for customer fields or return None if cancelled."""
@@ -195,19 +196,18 @@ def read_customer_header() -> dict | None:
         except ValueError as err:
             print(err)
 
-def calc_line_costs(daily_p: int, qty: int, nights: int, on_time: bool) -> tuple[int, int, int]:
-    """Return (first_night_p, additional_nights_p, extra_delay_p) in pence."""
-    first = daily_p * qty
-    # Using rational multiplier for clarity: (qty*daily) * 1/2 per extra night
-    add_each = (daily_p * qty * ADDITIONAL_NIGHT_MULTIPLIER_NUM) // ADDITIONAL_NIGHT_MULTIPLIER_DEN
-    additional = add_each * max(0, nights - 1)
-    extra = 0 if on_time else add_each
-    return first, additional, extra
+def calc_line_costs(daily_p: int, qty: int, nights: int, returned_on_time: bool) -> tuple[int, int, int]:
+    """Return (first_night, additional, delay) in pence."""
+    first_night_p = daily_p * qty
+    add_per_night = (daily_p * qty * ADDITIONAL_NIGHT_MULTIPLIER_NUM) // ADDITIONAL_NIGHT_MULTIPLIER_DEN
+    additional_p = add_per_night * max(0, nights - 1)
+    extra_delay_p = 0 if returned_on_time else add_per_night
+    return first_night_p, additional_p, extra_delay_p
 
-def read_item_lines(nights: int, on_time: bool) -> list[dict]:
+def read_item_lines(nights: int, returned_on_time: bool) -> list[dict]:
     """Collect item lines, computing totals eagerly for downstream reporting."""
     print(ITEM_LINES_INSTRUCTIONS)
-    print(f"Nights for this hire: {nights}  | Returned on time: {on_time}")
+    print(f"Nights for this hire: {nights}  | Returned on time: {returned_on_time}")
     print(f"Known codes: {catalog_codes()}")
     lines: list[dict] = []
 
@@ -225,11 +225,12 @@ def read_item_lines(nights: int, on_time: bool) -> list[dict]:
             print(err)
             continue
 
-        name, daily = CATALOG[code]
-        first_p, add_p, delay_p = calc_line_costs(daily, qty, nights, on_time)
+        item = find_item(code)  # safe after _parse_item_line
+        daily = item["daily_p"]
+        first_p, add_p, delay_p = calc_line_costs(daily, qty, nights, returned_on_time)
         lines.append({
             "code": code,
-            "name": name,
+            "name": item["name"],
             "qty": qty,
             "daily_p": daily,
             "first_night_p": first_p,
@@ -238,44 +239,10 @@ def read_item_lines(nights: int, on_time: bool) -> list[dict]:
             "line_total_p": first_p + add_p + delay_p,
         })
 
-# ---------- Reporting helpers (word-wrapped Equipment column) ----------
-
-def _wrap_equipment(text: str, width: int) -> list[str]:
-    """Word-wrap a comma-separated equipment string to a fixed width."""
-    lines: list[str] = []
-    cur = ""
-
-    def flush() -> None:
-        nonlocal cur
-        if cur:
-            lines.append(cur.ljust(width))
-            cur = ""
-
-    for item in (p.strip() for p in text.split(",") if p.strip()):
-        if len(item) > width:
-            flush()
-            for i in range(0, len(item), width):
-                chunk = item[i:i + width]
-                lines.append(chunk if len(chunk) == width else chunk.ljust(width))
-            continue
-
-        token = (", " if cur else "") + item
-        if len(cur) + len(token) <= width:
-            cur += token
-        else:
-            flush()
-            cur = item
-
-    if cur or not lines:
-        lines.append(cur.ljust(width))
-    return lines
-
-# ---------- Flows ----------
+# ---------- Flows
 
 def run_hire_flow(state: AppState) -> None:
     """Interactively capture hire data and persist it to state."""
-    # Show current catalogue and prices for user reference
-    print_catalog_price_list()
     while True:
         header = read_customer_header()
         if header is None:
@@ -283,31 +250,32 @@ def run_hire_flow(state: AppState) -> None:
             return
 
         nights = read_positive_int("Number of nights: ", min_value=1)
-        on_time = read_yes_no("Returned on time (y/n)? ")
-        lines = read_item_lines(nights, on_time)
+        returned_on_time = read_yes_no("Returned on time (y/n)? ")
+        lines = read_item_lines(nights, returned_on_time)
 
         items_summary = ", ".join(f"{ln['name']} – {ln['qty']}" for ln in lines)
         extra_delay_p = sum(ln["extra_delay_p"] for ln in lines)
         total_p = sum(ln["line_total_p"] for ln in lines)
 
         hire = {
-            "customer_id": header["customer_id"],      # manually entered now
+            "customer_id": state.next_customer_id,
             "customer_name": header["customer_name"],
             "nights": nights,
-            "returned_on_time": on_time,
+            "returned_on_time": returned_on_time,  # bool internally
             "lines": lines,
             "extra_delay_p": extra_delay_p,
             "total_p": total_p,
             "items_summary": items_summary,
         }
         state.hire_records.append(hire)
+        state.next_customer_id += 1
 
         print("\nSaved hire:")
         print(f"  Customer ID: {hire['customer_id']}")
         print(f"  Customer:    {hire['customer_name']}")
         print(f"  Equipment:   {items_summary}")
         print(f"  Nights:      {nights}")
-        print(f"  Returned on time: {'y' if on_time else 'n'}")
+        print(f"  Returned on time: {'y' if returned_on_time else 'n'}")
         print(f"  Extra charge for delayed return: {money(extra_delay_p)}")
         print(f"  Total cost:  {money(total_p)}\n")
 
@@ -316,66 +284,29 @@ def run_hire_flow(state: AppState) -> None:
             return
 
 def run_earnings_report(state: AppState) -> None:
-    """Print a fixed-width earnings table with word-wrapped Equipment.
-
-    Columns:
-        Customer ID | Equipment | Number of nights | Total Cost | Returned on time (y/n) | Extra charge for delayed return
-
-    Notes:
-        - Monetary columns show pounds and pence (e.g., £157.00).
-        - Equipment wraps onto continuation rows; other columns are blank on wrapped rows.
-    """
+    """Print an earnings report for all recorded hires in the current run."""
     if not state.hire_records:
         print("\nNo hires recorded yet.")
         return
 
-    # Build headers from configured widths to guarantee alignment
-    header = (
-        f"{'Customer ID':<{ID_WIDTH}} | "
-        f"{'Equipment':<{EQUIPMENT_WIDTH}} | "
-        f"{'Number of nights':<{NIGHTS_WIDTH}} | "
-        f"{'Total Cost':<{TOTAL_WIDTH}} | "
-        f"{'Returned on time (y/n)':<{ONTIME_WIDTH}} | "
-        f"{'Extra charge for delayed return':<{EXTRA_WIDTH}}"
-    )
-    ruler = (
-        f"{'-'*ID_WIDTH} + "
-        f"{'-'*EQUIPMENT_WIDTH} + "
-        f"{'-'*NIGHTS_WIDTH} + "
-        f"{'-'*TOTAL_WIDTH} + "
-        f"{'-'*ONTIME_WIDTH} + "
-        f"{'-'*EXTRA_WIDTH}"
-    )
-    print(header)
-    print(ruler)
+    print("\n=== Earnings Report ===")
+    grand_total = 0
+    grand_delay = 0
 
-    for h in state.hire_records:
-        total_money = money(h["total_p"])
-        extra_money = money(h["extra_delay_p"])
-        on_time_char = "y" if h["returned_on_time"] else "n"
-        lines = _wrap_equipment(h["items_summary"], EQUIPMENT_WIDTH)
+    for hire in state.hire_records:
+        print(f"Customer {hire['customer_id']} – {hire['customer_name']}")
+        print(f"  Items:  {hire['items_summary']}")
+        print(f"  Total:  {money(hire['total_p'])}")
+        print(f"  Delay:  {money(hire['extra_delay_p'])}")
+        print()
+        grand_total += hire["total_p"]
+        grand_delay += hire["extra_delay_p"]
 
-        # First row carries all fields
-        print(
-            f"{h['customer_id']:<{ID_WIDTH}} | "
-            f"{lines[0]} | "
-            f"{h['nights']:<{NIGHTS_WIDTH}} | "
-            f"{total_money:<{TOTAL_WIDTH}} | "
-            f"{on_time_char:<{ONTIME_WIDTH}} | "
-            f"{extra_money:<{EXTRA_WIDTH}}"
-        )
-        # Continuation rows: only Equipment is populated
-        for cont in lines[1:]:
-            print(
-                f"{'':<{ID_WIDTH}} | "
-                f"{cont} | "
-                f"{'':<{NIGHTS_WIDTH}} | "
-                f"{'':<{TOTAL_WIDTH}} | "
-                f"{'':<{ONTIME_WIDTH}} | "
-                f"{'':<{EXTRA_WIDTH}}"
-            )
+    print("--- Totals ---")
+    print(f"Grand total earnings: {money(grand_total)}")
+    print(f"Of which late-return charges: {money(grand_delay)}")
 
-# ---------- Entry point ----------
+# ---------- Entry point
 
 def main() -> None:
     """Run the main menu loop until the user chooses to exit."""
@@ -386,6 +317,7 @@ def main() -> None:
         if choice is None:
             print("Invalid option, try again.")
             continue
+
         if choice == 1:
             run_hire_flow(state)
         elif choice == 2:

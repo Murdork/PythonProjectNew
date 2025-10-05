@@ -1,4 +1,4 @@
-""""COM4018 – Equipment Hire Console App (Tasks 2 & 3)
+"""COM4018 – Equipment Hire Console App (Tasks 2 & 3)
 
 A menu-driven console programme for a small shop that hires fishing and camping equipment.
 
@@ -86,6 +86,55 @@ def print_main_menu() -> None:
     """Display the main menu exactly as specified in the brief."""
     for line in MAIN_MENU_LINES:
         print(line)
+
+def _wrap_equipment(text: str, width: int) -> list[str]:
+    """Word-wrap the equipment description to a fixed width.
+
+    The input is a comma-separated string (e.g., 'Day chairs – 2, Bed chairs – 1').
+    We break on ", " between items to create multiple lines when needed. If an
+    individual item exceeds the width, we hard-wrap that item.
+
+    Args:
+        text: The equipment summary string.
+        width: The maximum column width for the Equipment field.
+
+    Returns:
+        A list of lines, each right-padded with spaces to exactly `width`.
+    """
+    lines: list[str] = []
+    current_line = ""
+
+    # Split by comma to get individual items
+    items = [item.strip() for item in text.split(",")]
+
+    for item in items:
+        # Prefer to add ", " + item to the current line
+        token = (", " + item) if current_line else item
+
+        if len(token) <= (width - len(current_line)):
+            current_line += token
+            continue
+
+        # If current line has content, flush it
+        if current_line:
+            lines.append(current_line.ljust(width))
+            current_line = ""
+
+        # If the single item is longer than width, hard-wrap it into chunks
+        while len(item) > width:
+            lines.append(item[:width])
+            item = item[width:]
+
+        # Start new line with the (possibly shortened) item
+        current_line = item
+
+    # Flush remainder or ensure at least one line
+    if current_line:
+        lines.append(current_line.ljust(width))
+    if not lines:
+        lines.append("".ljust(width))
+
+    return lines
 
 def read_choice() -> int | None:
     """Return a validated menu choice (1–3) or None when invalid."""
@@ -283,8 +332,11 @@ def run_hire_flow(state: AppState) -> None:
             print("Returning to main menu.")
             return
 
+# (wrap helper moved to Utilities section above)
+
+
 def run_earnings_report(state: AppState) -> None:
-    """Print the earnings report as a fixed-width table per the brief's layout.
+    """Print the earnings report as a fixed-width table with word-wrap on Equipment.
 
     Columns:
         Customer ID | Equipment | Number of nights | Total Cost | Returned on time (y/n) | Extra charge for delayed return
@@ -292,25 +344,58 @@ def run_earnings_report(state: AppState) -> None:
     Notes:
         - Amounts are shown as whole pounds (integer) to mirror the brief's example.
         - Returned-on-time is shown as 'y' or 'n'.
+        - The Equipment column wraps onto subsequent physical rows; continuation
+          rows leave all other columns blank so the table remains aligned.
     """
     if not state.hire_records:
         print("\nNo hires recorded yet.")
         return
 
-    # Headers in the “Original from B” plain table style
+    # Column widths (must match header ruler below)
+    # These correspond exactly to the hyphen ruler just below.
+    ID_W = 12
+    EQUIP_W = 65
+    NIGHTS_W = 18
+    TOTAL_W = 12
+    ONTIME_W = 24
+    EXTRA_W = 32
+
+    # Headers in the “Original from B” plain table style (kept verbatim)
     print("Customer ID | Equipment                                                       | Number of nights | Total Cost | Returned on time (y/n) | Extra charge for delayed return")
     print("------------+-----------------------------------------------------------------+------------------+------------+------------------------+--------------------------------")
 
     for hire in state.hire_records:
         cust_id = hire["customer_id"]
-        equipment_str = hire["items_summary"]
         nights = hire["nights"]
         total_pounds = hire["total_p"] // 100
         extra_pounds = hire["extra_delay_p"] // 100
         on_time_char = "y" if hire["returned_on_time"] else "n"
 
-        # Fixed-width columns to match the layout used in examples
-        print(f"{cust_id:<11} | {equipment_str:<65} | {nights:<16} | {total_pounds:<10} | {on_time_char:<22} | {extra_pounds:<30}")
+        # Wrap the equipment string to EQUIP_W and print across multiple physical rows.
+        equip_lines = _wrap_equipment(hire["items_summary"], EQUIP_W)
+
+        # First (main) row carries all numeric/flag columns.
+        first = equip_lines[0]
+        print(
+            f"{cust_id:<{ID_W}} | "
+            f"{first} | "
+            f"{nights:<{NIGHTS_W}} | "
+            f"{total_pounds:<{TOTAL_W}} | "
+            f"{on_time_char:<{ONTIME_W}} | "
+            f"{extra_pounds:<{EXTRA_W}}"
+        )
+
+        # Continuation rows: only the Equipment column is populated; others blank.
+        for cont in equip_lines[1:]:
+            print(
+                f"{'':<{ID_W}} | "
+                f"{cont} | "
+                f"{'':<{NIGHTS_W}} | "
+                f"{'':<{TOTAL_W}} | "
+                f"{'':<{ONTIME_W}} | "
+                f"{'':<{EXTRA_W}}"
+            )
+
 
 # ---------- Entry point
 
